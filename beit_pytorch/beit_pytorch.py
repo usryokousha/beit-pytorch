@@ -33,7 +33,7 @@ from timm.models.vision_transformer import checkpoint_filter_fn
 def _cfg(url='', **kwargs):
     return {
         'url': url,
-        'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
+        'vocab_size': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
         'crop_pct': .9, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
@@ -50,7 +50,7 @@ default_cfgs = {
     ),
     'beit_base_patch16_224_in22k': _cfg(
         url='https://conversationhub.blob.core.windows.net/beit-share-public/beit/beit_base_patch16_224_pt22k_ft22k.pth',
-        num_classes=21841,
+        vocab_size=21841,
     ),
     'beit_large_patch16_224': _cfg(
         url='https://conversationhub.blob.core.windows.net/beit-share-public/beit/beit_large_patch16_224_pt22k_ft22kto1k.pth'),
@@ -64,7 +64,7 @@ default_cfgs = {
     ),
     'beit_large_patch16_224_in22k': _cfg(
         url='https://conversationhub.blob.core.windows.net/beit-share-public/beit/beit_large_patch16_224_pt22k_ft22k.pth',
-        num_classes=21841,
+        vocab_size=21841,
     ),
 }
 
@@ -215,14 +215,30 @@ class Beit(nn.Module):
     """ Vision Transformer with support for patch or hybrid CNN input stage."""
 
     def __init__(
-            self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, global_pool='avg',
-            embed_dim=768, depth=12, num_heads=12, mlp_ratio=4., qkv_bias=True, drop_rate=0.,
-            attn_drop_rate=0., drop_path_rate=0., norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            init_values=None, pre_train=False, use_abs_pos_emb=True, use_rel_pos_bias=False, use_shared_rel_pos_bias=False,
+            self, 
+            img_size=224, 
+            patch_size=16, 
+            in_chans=3, 
+            vocab_size=1000, 
+            embed_dim=768, 
+            depth=12, 
+            num_heads=12, 
+            mlp_ratio=4., 
+            qkv_bias=True, 
+            drop_rate=0.,
+            attn_drop_rate=0., 
+            drop_path_rate=0., 
+            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            pre_train=False, 
+            init_values=None, 
+            use_abs_pos_emb=True, 
+            use_rel_pos_bias=False, 
+            use_shared_rel_pos_bias=False,
+            global_pool='avg',
             head_init_scale=0.001):
         super().__init__()
         self.pre_train = pre_train
-        self.num_classes = num_classes
+        self.vocab_size = vocab_size
         self.global_pool = global_pool
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.grad_checkpointing = False
@@ -251,7 +267,7 @@ class Beit(nn.Module):
         use_fc_norm = self.global_pool == 'avg'
         self.norm = nn.Identity() if use_fc_norm else norm_layer(embed_dim)
         self.fc_norm = norm_layer(embed_dim) if use_fc_norm else None
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(embed_dim, vocab_size) if vocab_size > 0 else nn.Identity()
 
         self.apply(self._init_weights)
         if self.pos_embed is not None:
@@ -306,11 +322,11 @@ class Beit(nn.Module):
     def get_classifier(self):
         return self.head
 
-    def reset_classifier(self, num_classes, global_pool=None):
-        self.num_classes = num_classes
+    def reset_classifier(self, vocab_size, global_pool=None):
+        self.vocab_size = vocab_size
         if global_pool is not None:
             self.global_pool = global_pool
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(self.embed_dim, vocab_size) if vocab_size > 0 else nn.Identity()
 
     def forward_features(self, x):
         x = self.patch_embed(x)
@@ -397,64 +413,3 @@ def beit_large_patch3_42(pretrained=False, **kwargs):
     return model
 
 
-@register_model
-def beit_base_patch16_224(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=0.1, **kwargs)
-    model = _create_beit('beit_base_patch16_224', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_base_patch16_384(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        img_size=384, patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=0.1, **kwargs)
-    model = _create_beit('beit_base_patch16_384', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_base_patch16_224_in22k(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=0.1, **kwargs)
-    model = _create_beit('beit_base_patch16_224_in22k', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_large_patch16_224(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=1e-5,  **kwargs)
-    model = _create_beit('beit_large_patch16_224', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_large_patch16_384(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        img_size=384, patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=1e-5, **kwargs)
-    model = _create_beit('beit_large_patch16_384', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_large_patch16_512(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        img_size=512, patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=1e-5, **kwargs)
-    model = _create_beit('beit_large_patch16_512', pretrained=pretrained, **model_kwargs)
-    return model
-
-
-@register_model
-def beit_large_patch16_224_in22k(pretrained=False, **kwargs):
-    model_kwargs = dict(
-        patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
-        use_abs_pos_emb=False, use_rel_pos_bias=True, init_values=1e-5,  **kwargs)
-    model = _create_beit('beit_large_patch16_224_in22k', pretrained=pretrained, **model_kwargs)
-    return model

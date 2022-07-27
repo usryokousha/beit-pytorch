@@ -2,7 +2,7 @@ import math
 from math import sqrt
 import argparse
 from pathlib import Path
-import wandb
+from torch.utils.tensorboard import SummaryWriter
 
 # torch
 
@@ -30,6 +30,8 @@ parser.add_argument('--image_folder', type = str, required = True,
 
 parser.add_argument('--image_size', type = int, required = False, default = 128,
                     help='image size')
+
+parser.add_argument('--logging_dir', type = str, required = False, default = 'Tensorboard logs')
 
 
 train_group = parser.add_argument_group('Training settings')
@@ -145,11 +147,7 @@ model_config = dict(
     kl_loss_weight = KL_LOSS_WEIGHT
 )
 
-run = wandb.init(
-    project = 'dalle_train_vae',
-    job_type = 'train_model',
-    config = model_config
-)
+writer = SummaryWriter(args.logging_dir)
 
 def save_model(path):
     save_obj = {
@@ -197,16 +195,12 @@ for epoch in range(EPOCHS):
             images, recons, hard_recons, codes = map(lambda t: t.detach().cpu(), (images, recons, hard_recons, codes))
             images, recons, hard_recons = map(lambda t: make_grid(t.float(), nrow = int(sqrt(k)), normalize = True, range = (-1, 1)), (images, recons, hard_recons))
 
-            logs = {
-                **logs,
-                'sample images':        wandb.Image(images, caption = 'original images'),
-                'reconstructions':      wandb.Image(recons, caption = 'reconstructions'),
-                'hard reconstructions': wandb.Image(hard_recons, caption = 'hard reconstructions'),
-                'codebook_indices':     wandb.Histogram(codes),
-                'temperature':          temp
-            }
+            writer.add_image('images', images, global_step)
+            writer.add_image('recons', recons, global_step)
+            writer.add_image('hard_recons', hard_recons, global_step)
+            writer.add_histogram('codes', codes, global_step)
+            writer.add_scalar('temperature', temp, global_step)
 
-            wandb.save('./vae.pt')
             save_model(f'./vae.pt')
 
             # temperature anneal
@@ -220,28 +214,12 @@ for epoch in range(EPOCHS):
             lr = sched.get_last_lr()[0]
             print(epoch, i, f'lr - {lr:6f} loss - {loss.item()}')
 
-            logs = {
-                **logs,
-                'epoch': epoch,
-                'iter': i,
-                'loss': loss.item(),
-                'lr': lr
-            }
-
-        wandb.log(logs)
+            writer.add_scalar('loss', loss.item(), global_step)
+            writer.add_scalar('lr', lr, global_step)
+      
         global_step += 1
-
-    model_artifact = wandb.Artifact('trained-vae', type = 'model', metadata = dict(model_config))
-    model_artifact.add_file('vae.pt')
-    run.log_artifact(model_artifact)
 
 # save final vae and cleanup
 
 save_model('./vae-final.pt')
-wandb.save('./vae-final.pt')
-
-model_artifact = wandb.Artifact('trained-vae', type = 'model', metadata = dict(model_config))
-model_artifact.add_file('vae-final.pt')
-run.log_artifact(model_artifact)
-
-wandb.finish()
+writer.close()

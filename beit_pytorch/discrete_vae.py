@@ -6,8 +6,6 @@ import numpy as np
 
 from einops import rearrange
 
-from dalle_pytorch import distributed_utils
-
 # helpers
 
 def exists(val):
@@ -161,20 +159,6 @@ class DiscreteVAE(nn.Module):
 
         # take care of normalization within class
         self.normalization = tuple(map(lambda t: t[:channels], normalization))
-
-        self._register_external_parameters()
-
-    def _register_external_parameters(self):
-        """Register external parameters for DeepSpeed partitioning."""
-        if (
-                not distributed_utils.is_distributed
-                or not distributed_utils.using_backend(
-                    distributed_utils.DeepSpeedBackend)
-        ):
-            return
-
-        deepspeed = distributed_utils.backend.backend_module
-        deepspeed.zero.register_external_parameter(self, self.codebook.weight)
 
     def norm(self, images):
         if not exists(self.normalization):
